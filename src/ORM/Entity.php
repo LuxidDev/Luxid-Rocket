@@ -3,8 +3,12 @@
 namespace Rocket\ORM;
 
 use Rocket\Metadata\EntityMetadata;
+use Rocket\Metadata\RelationMetadata;
 use Rocket\Connection\Connection;
 use Rocket\Query\QueryBuilder;
+use Rocket\Relations\HasOne;
+use Rocket\Relations\HasMany;
+use Rocket\Relations\BelongsTo;
 
 abstract class Entity
 {
@@ -27,6 +31,54 @@ abstract class Entity
    * Validation errors
    */
   protected array $errors = [];
+
+  /**
+   * Loaded relations
+   */
+  protected array $relations = [];
+
+  public function __construct()
+  {
+    // Initialize any default values
+    $metadata = static::getMetadata();
+    foreach ($metadata->getColumns() as $column) {
+      $property = $column->getProperty();
+      if ($column->getDefault() !== null && !isset($this->$property)) {
+        $this->$property = $column->getDefault();
+      }
+    }
+  }
+
+  protected function loadRelation(RelationMetadata $relation)
+  {
+    $type = $relation->getType();
+    $relatedClass = $relation->getRelatedClass();
+
+    echo "  Loading relation type: {$type}, class: {$relatedClass}\n";
+    echo "  Foreign key: {$relation->getForeignKey()}, Local key: {$relation->getLocalKey()}\n";
+
+    switch ($type) {
+      case 'hasOne':
+        $rel = new HasOne($this, $relatedClass, $relation->getForeignKey(), $relation->getLocalKey());
+        $result = $rel->get();
+        echo "  HasOne result: " . (is_null($result) ? 'NULL' : get_class($result)) . "\n";
+        return $result;
+
+      case 'hasMany':
+        $rel = new HasMany($this, $relatedClass, $relation->getForeignKey(), $relation->getLocalKey());
+        $result = $rel->get();
+        echo "  HasMany result count: " . count($result) . "\n";
+        return $result;
+
+      case 'belongsTo':
+        $rel = new BelongsTo($this, $relatedClass, $relation->getForeignKey(), $relation->getOwnerKey());
+        $result = $rel->get();
+        echo "  BelongsTo result: " . (is_null($result) ? 'NULL' : get_class($result)) . "\n";
+        return $result;
+    }
+
+    return null;
+  }
 
   /**
    * Get entity metadata (parsed from attributes)
@@ -359,11 +411,37 @@ abstract class Entity
    */
   public function __get(string $name)
   {
+    echo "\n=== __get called for: {$name} ===\n";
+
+    // Check for computed property
     $method = 'get' . ucfirst($name);
     if (method_exists($this, $method)) {
+      echo "Found computed property: {$method}\n";
       return $this->$method();
     }
 
+    // Check for relation
+    if (isset($this->relations[$name])) {
+      echo "Returning cached relation: {$name}\n";
+      return $this->relations[$name];
+    }
+
+    $metadata = static::getMetadata();
+    $relations = $metadata->getRelations();
+    echo "Total relations in metadata: " . count($relations) . "\n";
+
+    foreach ($relations as $relation) {
+      echo "  Relation name: {$relation->getName()}, Type: {$relation->getType()}\n";
+      if ($relation->getName() === $name) {
+        echo "  ✅ Matched! Loading relation: {$name}\n";
+        $related = $this->loadRelation($relation);
+        echo "  Loaded result type: " . (is_null($related) ? 'NULL' : (is_array($related) ? 'Array(' . count($related) . ')' : get_class($related))) . "\n";
+        $this->relations[$name] = $related;
+        return $related;
+      }
+    }
+
+    echo "Property {$name} not found\n";
     return null;
   }
 
@@ -373,7 +451,18 @@ abstract class Entity
   public function __isset(string $name): bool
   {
     $method = 'get' . ucfirst($name);
-    return method_exists($this, $method);
+    if (method_exists($this, $method)) {
+      return true;
+    }
+
+    $metadata = static::getMetadata();
+    foreach ($metadata->getRelations() as $relation) {
+      if ($relation->getName() === $name) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   /**

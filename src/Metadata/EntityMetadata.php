@@ -4,6 +4,9 @@ namespace Rocket\Metadata;
 
 use Rocket\Attributes\Column;
 use Rocket\Attributes\Entity as EntityAttribute;
+use Rocket\Attributes\Relations\HasOne;
+use Rocket\Attributes\Relations\HasMany;
+use Rocket\Attributes\Relations\BelongsTo;
 use ReflectionClass;
 
 class EntityMetadata
@@ -19,6 +22,8 @@ class EntityMetadata
   {
     $this->className = $className;
     $this->parseAttributes();
+    $this->parseRelations();
+    echo "EntityMetadata for {$className} has " . count($this->relations) . " relations\n";
   }
 
   protected function parseAttributes(): void
@@ -63,6 +68,61 @@ class EntityMetadata
     }
   }
 
+  protected function parseRelations(): void
+  {
+    $reflection = new ReflectionClass($this->className);
+
+    foreach ($reflection->getProperties() as $property) {
+      $attributes = $property->getAttributes();
+
+      foreach ($attributes as $attribute) {
+        $attributeName = $attribute->getName();
+
+        if ($attributeName === HasOne::class) {
+          $relation = $attribute->newInstance();
+          $relatedClass = $relation->getRelatedClass();
+          $foreignKey = $relation->getForeignKey() ?? $this->getDefaultForeignKey($relatedClass);
+          $localKey = $relation->getLocalKey() ?? 'id';
+
+          $this->relations[] = new RelationMetadata(
+            $property->getName(),
+            'hasOne',
+            $relatedClass,
+            $foreignKey,
+            $localKey
+          );
+        } elseif ($attributeName === HasMany::class) {
+          $relation = $attribute->newInstance();
+          $relatedClass = $relation->getRelatedClass();
+          $foreignKey = $relation->getForeignKey() ?? $this->getDefaultForeignKey($this->className);
+          $localKey = $relation->getLocalKey() ?? 'id';
+
+          $this->relations[] = new RelationMetadata(
+            $property->getName(),
+            'hasMany',
+            $relatedClass,
+            $foreignKey,
+            $localKey
+          );
+        } elseif ($attributeName === BelongsTo::class) {
+          $relation = $attribute->newInstance();
+          $relatedClass = $relation->getRelatedClass();
+          $foreignKey = $relation->getForeignKey() ?? $this->getDefaultForeignKey($relatedClass);
+          $ownerKey = $relation->getOwnerKey() ?? 'id';
+
+          $this->relations[] = new RelationMetadata(
+            $property->getName(),
+            'belongsTo',
+            $relatedClass,
+            $foreignKey,
+            null,
+            $ownerKey
+          );
+        }
+      }
+    }
+  }
+
   protected function parseValidationRules(\ReflectionProperty $property, ColumnMetadata $columnMetadata): void
   {
     $attributes = $property->getAttributes();
@@ -76,6 +136,13 @@ class EntityMetadata
         $columnMetadata->addRule($rule);
       }
     }
+  }
+
+  protected function getDefaultForeignKey(string $class): string
+  {
+    $parts = explode('\\', $class);
+    $className = end($parts);
+    return strtolower($className) . '_id';
   }
 
   public function getTableName(): string
