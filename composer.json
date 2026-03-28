@@ -12,7 +12,8 @@
     ],
     "require": {
         "php": "^8.0",
-        "ext-pdo": "*"
+        "ext-pdo": "*",
+        "fakerphp/faker": "^1.23"
     },
     "require-dev": {
         "phpunit/phpunit": "^9.0",
@@ -20,7 +21,8 @@
     },
     "autoload": {
         "psr-4": {
-            "Rocket\\": "src/"
+            "Rocket\\": "src/",
+            "Seeds\\": "seeds/"
         }
     },
     "autoload-dev": {
