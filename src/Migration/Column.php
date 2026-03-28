@@ -42,6 +42,11 @@ class Column
     return new self($name, 'FLOAT');
   }
 
+  public static function decimal(string $name, int $total = 10, int $places = 2): self
+  {
+    return new self($name, "DECIMAL({$total},{$places})");
+  }
+
   public static function boolean(string $name): self
   {
     return new self($name, 'BOOLEAN');
