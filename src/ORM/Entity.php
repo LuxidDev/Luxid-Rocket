@@ -88,6 +88,31 @@ abstract class Entity
   }
 
   /**
+   * Truncate the table (delete all records and reset auto-increment)
+   * 
+   * @return bool
+   */
+  public static function truncate(): bool
+  {
+    $tableName = static::tableName();
+    $connection = self::connection();
+
+    // MySQL truncate
+    $sql = "TRUNCATE TABLE {$tableName}";
+
+    try {
+      $connection->execute($sql);
+      return true;
+    } catch (\Exception $e) {
+      // Fallback to DELETE for databases that don't support TRUNCATE
+      $connection->execute("DELETE FROM {$tableName}");
+      // Reset auto-increment
+      $connection->execute("ALTER TABLE {$tableName} AUTO_INCREMENT = 1");
+      return true;
+    }
+  }
+
+  /**
    * Load data into the entity
    */
   public function load(array $data): self
