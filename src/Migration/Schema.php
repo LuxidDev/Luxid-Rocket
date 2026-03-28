@@ -11,11 +11,13 @@ class Schema
   protected array $columns = [];
   protected array $foreignKeys = [];
   protected array $indexes = [];
+  protected bool $isAlter = false;
 
-  public function __construct(Connection $db, string $table)
+  public function __construct(Connection $db, string $table, bool $isAlter = false)
   {
     $this->db = $db;
     $this->table = $table;
+    $this->isAlter = $isAlter;
   }
 
   /**
@@ -69,6 +71,16 @@ class Schema
   }
 
   /**
+   * Add a decimal column
+   */
+  public function decimal(string $name, int $total = 10, int $places = 2): Column
+  {
+    $column = Column::decimal($name, $total, $places);
+    $this->columns[] = $column;
+    return $column;
+  }
+
+  /**
    * Add a boolean column
    */
   public function boolean(string $name): Column
@@ -109,7 +121,44 @@ class Schema
     return $foreignKey;
   }
 
+  /**
+   * Drop a column (for alter context)
+   */
+  public function dropColumn(string $name): self
+  {
+    $sql = "ALTER TABLE {$this->table} DROP COLUMN {$name}";
+    $this->db->execute($sql);
+    return $this;
+  }
+
+  /**
+   * Execute the schema changes
+   */
   public function create(): void
+  {
+    if ($this->isAlter) {
+      $this->alter();
+    } else {
+      $this->createTable();
+    }
+
+    // Add foreign keys after table creation (only for new tables)
+    if (!$this->isAlter) {
+      foreach ($this->foreignKeys as $fk) {
+        $this->addForeignKeyConstraint($fk);
+      }
+    }
+  }
+
+  protected function alter(): void
+  {
+    foreach ($this->columns as $column) {
+      $sql = "ALTER TABLE {$this->table} ADD COLUMN " . $this->buildColumnDefinition($column);
+      $this->db->execute($sql);
+    }
+  }
+
+  protected function createTable(): void
   {
     $sql = "CREATE TABLE {$this->table} (\n";
 
@@ -141,11 +190,6 @@ class Schema
     $sql .= "\n)";
 
     $this->db->execute($sql);
-
-    // Add foreign keys after table creation
-    foreach ($this->foreignKeys as $fk) {
-      $this->addForeignKeyConstraint($fk);
-    }
   }
 
   protected function buildColumnDefinition(Column $column): string
