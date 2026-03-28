@@ -49,37 +49,6 @@ abstract class Entity
     }
   }
 
-  protected function loadRelation(RelationMetadata $relation)
-  {
-    $type = $relation->getType();
-    $relatedClass = $relation->getRelatedClass();
-
-    echo "  Loading relation type: {$type}, class: {$relatedClass}\n";
-    echo "  Foreign key: {$relation->getForeignKey()}, Local key: {$relation->getLocalKey()}\n";
-
-    switch ($type) {
-      case 'hasOne':
-        $rel = new HasOne($this, $relatedClass, $relation->getForeignKey(), $relation->getLocalKey());
-        $result = $rel->get();
-        echo "  HasOne result: " . (is_null($result) ? 'NULL' : get_class($result)) . "\n";
-        return $result;
-
-      case 'hasMany':
-        $rel = new HasMany($this, $relatedClass, $relation->getForeignKey(), $relation->getLocalKey());
-        $result = $rel->get();
-        echo "  HasMany result count: " . count($result) . "\n";
-        return $result;
-
-      case 'belongsTo':
-        $rel = new BelongsTo($this, $relatedClass, $relation->getForeignKey(), $relation->getOwnerKey());
-        $result = $rel->get();
-        echo "  BelongsTo result: " . (is_null($result) ? 'NULL' : get_class($result)) . "\n";
-        return $result;
-    }
-
-    return null;
-  }
-
   /**
    * Get entity metadata (parsed from attributes)
    */
@@ -201,7 +170,7 @@ abstract class Entity
     foreach ($columns as $column) {
       $property = $column->getProperty();
 
-      // Skip if property doesn't exist or is null and auto-generated
+      // Skip if property doesn't exist
       if (!property_exists($this, $property)) {
         continue;
       }
@@ -243,7 +212,6 @@ abstract class Entity
       return true;
     }
 
-    $metadata = static::getMetadata();
     $pk = static::primaryKey();
 
     return self::connection()->update(
@@ -407,46 +375,61 @@ abstract class Entity
   protected function afterDelete(): void {}
 
   /**
-   * Magic getter for computed properties
+   * Load a relation
+   */
+  protected function loadRelation(RelationMetadata $relation)
+  {
+    $type = $relation->getType();
+    $relatedClass = $relation->getRelatedClass();
+
+    switch ($type) {
+      case 'hasOne':
+        $rel = new HasOne($this, $relatedClass, $relation->getForeignKey(), $relation->getLocalKey());
+        return $rel->get();
+
+      case 'hasMany':
+        $rel = new HasMany($this, $relatedClass, $relation->getForeignKey(), $relation->getLocalKey());
+        return $rel->get();
+
+      case 'belongsTo':
+        $rel = new BelongsTo($this, $relatedClass, $relation->getForeignKey(), $relation->getOwnerKey());
+        return $rel->get();
+    }
+
+    return null;
+  }
+
+  /**
+   * Magic getter for computed properties and relations
    */
   public function __get(string $name)
   {
-    echo "\n=== __get called for: {$name} ===\n";
-
     // Check for computed property
     $method = 'get' . ucfirst($name);
     if (method_exists($this, $method)) {
-      echo "Found computed property: {$method}\n";
       return $this->$method();
     }
 
-    // Check for relation
+    // Check for cached relation
     if (isset($this->relations[$name])) {
-      echo "Returning cached relation: {$name}\n";
       return $this->relations[$name];
     }
 
+    // Load relation
     $metadata = static::getMetadata();
-    $relations = $metadata->getRelations();
-    echo "Total relations in metadata: " . count($relations) . "\n";
-
-    foreach ($relations as $relation) {
-      echo "  Relation name: {$relation->getName()}, Type: {$relation->getType()}\n";
+    foreach ($metadata->getRelations() as $relation) {
       if ($relation->getName() === $name) {
-        echo "  ✅ Matched! Loading relation: {$name}\n";
         $related = $this->loadRelation($relation);
-        echo "  Loaded result type: " . (is_null($related) ? 'NULL' : (is_array($related) ? 'Array(' . count($related) . ')' : get_class($related))) . "\n";
         $this->relations[$name] = $related;
         return $related;
       }
     }
 
-    echo "Property {$name} not found\n";
     return null;
   }
 
   /**
-   * Magic isset for computed properties
+   * Magic isset for computed properties and relations
    */
   public function __isset(string $name): bool
   {
