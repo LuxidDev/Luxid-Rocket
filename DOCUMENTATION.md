@@ -104,6 +104,7 @@ class User extends Entity
 | `#[Min(8)]` | Minimum length/value | `#[Min(8)]` |
 | `#[Max(100)]` | Maximum length/value | `#[Max(100)]` |
 | `#[Unique]` | Must be unique in table | `#[Unique]` |
+| `#[In(['a', 'b'])]` | Must be in allowed values | `#[In(['pending', 'completed'])]` |
 
 ## Basic CRUD Operations
 
@@ -144,6 +145,23 @@ $users = User::query()
 
 // Count records
 $count = User::query()->where('is_active', '=', true)->count();
+
+// Get total count
+$total = User::count();
+
+// Check if any records exist
+if (User::exists()) {
+    echo "Users found!";
+}
+
+// Get first record
+$firstUser = User::first();
+
+// Get last record
+$lastUser = User::last();
+
+// Get random records
+$randomUsers = User::random(3);
 ```
 
 ### Updating Records
@@ -157,8 +175,15 @@ $user->save(); // Automatically updates updated_at timestamp
 ### Deleting Records
 
 ```php
+// Delete a single record
 $user = User::find(1);
 $user->delete();
+
+// Delete all records
+User::deleteAll();
+
+// Truncate table (delete all and reset auto-increment)
+User::truncate();
 ```
 
 ## Query Builder
@@ -239,6 +264,12 @@ class User extends Entity
         if (!empty($this->password) && !$this->isPasswordHashed()) {
             $this->password = password_hash($this->password, PASSWORD_DEFAULT);
         }
+        
+        // Auto-set timestamps
+        if ($this->isNew && empty($this->created_at)) {
+            $this->created_at = date('Y-m-d H:i:s');
+        }
+        $this->updated_at = date('Y-m-d H:i:s');
     }
     
     protected function afterSave(): void
@@ -348,170 +379,78 @@ $post = Post::find(1);
 echo $post->author->name; // Loads the author automatically
 ```
 
-## Migrations
+## Entity Helper Methods
 
-### Intelligent Migration Generation
+Rocket provides several convenient helper methods on all entities:
 
-Rocket's migration system is smart enough to understand what you're trying to do based on the migration name you provide. When you run `php juice make:migration`, the system analyzes the name and automatically generates the appropriate migration template.
+| Method | Description | Example |
+|--------|-------------|---------|
+| `count()` | Get total record count | `User::count()` |
+| `exists()` | Check if any records exist | `User::exists()` |
+| `first()` | Get the first record | `User::first()` |
+| `last()` | Get the last record | `User::last()` |
+| `random($limit)` | Get random records | `User::random(5)` |
+| `deleteAll()` | Delete all records | `User::deleteAll()` |
+| `truncate()` | Delete all records and reset auto-increment | `User::truncate()` |
 
-#### How It Works
+### Example Usage
 
-The migration generator uses **naming conventions** to determine the migration type:
+```php
+// Count users
+$totalUsers = User::count();
 
-| Migration Name Pattern | Generated Type | Description |
-|------------------------|----------------|-------------|
-| `create_*_table` | **Create Table** | Creates a new table using `Rocket::table()` |
-| `add_*_to_*` | **Add Column** | Adds columns to an existing table using `Rocket::alter()` |
-| `drop_*_from_*` | **Drop Column** | Removes columns from an existing table using `Rocket::alter()` |
-| `alter_*` | **Alter Table** | General table alterations using `Rocket::alter()` |
-| Anything else | **Generic** | Custom migration with placeholder code |
+// Check if there are any active users
+if (User::exists()) {
+    echo "There are users!";
+}
 
-#### Examples of Smart Detection
+// Get the newest user
+$newestUser = User::last();
 
-```bash
-# Create Table Migration
-php juice make:migration create_users_table
-# → Generates Rocket::table() template
+// Get 3 random products for a "You might also like" section
+$randomProducts = Product::random(3);
 
-php juice make:migration create_products_table  
-# → Generates Rocket::table() template
+// Reset the users table for testing
+User::truncate();
 
-# Add Column Migration
-php juice make:migration add_email_to_users
-# → Generates Rocket::alter() template for adding columns
-
-php juice make:migration add_price_to_products
-# → Generates Rocket::alter() template
-
-# Drop Column Migration
-php juice make:migration drop_old_column_from_users
-# → Generates Rocket::alter() template for dropping columns
-
-# Alter Table Migration
-php juice make:migration alter_users_table
-# → Generates general Rocket::alter() template
-
-# Generic Migration (no specific pattern)
-php juice make:migration update_user_data
-# → Generates a generic template with comments
+// Clean up old records
+User::where('last_login', '<', date('Y-m-d', strtotime('-1 year')))->deleteAll();
 ```
 
-### Create Table Migration (CREATE)
+## Migrations
 
-When you create a table migration, the system generates a `Rocket::table()` block. This is for **creating new tables from scratch**.
+### Creating a Migration
+
+```bash
+php juice make:migration create_users_table
+php juice make:migration add_email_to_users
+php juice make:migration create_products_table
+```
+
+### Migration Structure
 
 ```php
 <?php
-// migrations/m00002_create_products_table.php
-
 use Rocket\Migration\Migration;
 use Rocket\Migration\Rocket;
-use Rocket\Migration\Column;
 
-class m00002_create_products_table extends Migration
+class m00001_create_users_table extends Migration
 {
     public function up(): void
     {
-        // Rocket::table() creates a new table
-        Rocket::table('products', function($column) {
+        Rocket::table('users', function($column) {
             $column->id('id');
-            $column->string('name');
-            $column->text('description')->nullable();
-            $column->decimal('price', 10, 2);
-            $column->integer('stock')->default(0);
+            $column->string('email')->unique();
+            $column->string('password')->hidden();
+            $column->string('firstname');
+            $column->string('lastname');
             $column->timestamps();
         });
     }
     
     public function down(): void
     {
-        // Rocket::drop() removes the entire table
-        Rocket::drop('products');
-    }
-}
-```
-
-**Key Points:**
-- `Rocket::table()` is used to **create a new table**
-- All columns are defined at once
-- The `down()` method drops the entire table
-- This is the starting point for new tables
-
-### Add Column Migration (ALTER)
-
-When you add columns to an existing table, the system generates a `Rocket::alter()` block. This is for **modifying existing tables**.
-
-```bash
-php juice make:migration add_sku_to_products
-```
-
-```php
-<?php
-// migrations/m00003_add_sku_to_products.php
-
-use Rocket\Migration\Migration;
-use Rocket\Migration\Rocket;
-
-class m00003_add_sku_to_products extends Migration
-{
-    public function up(): void
-    {
-        // Rocket::alter() modifies an existing table
-        Rocket::alter('products', function($column) {
-            $column->string('sku')->unique();
-            $column->string('brand')->nullable();
-        });
-    }
-    
-    public function down(): void
-    {
-        // Rollback by dropping the added columns
-        Rocket::alter('products', function($column) {
-            $column->dropColumn('sku');
-            $column->dropColumn('brand');
-        });
-    }
-}
-```
-
-**Key Points:**
-- `Rocket::alter()` is used to **modify existing tables**
-- You add new columns, drop existing ones, or modify column definitions
-- The `down()` method removes the changes you made
-- This preserves existing data in other columns
-
-### Drop Column Migration (ALTER)
-
-When you remove columns from an existing table, the system generates a `Rocket::alter()` with `dropColumn()`.
-
-```bash
-php juice make:migration drop_old_column_from_products
-```
-
-```php
-<?php
-// migrations/m00004_drop_old_column_from_products.php
-
-use Rocket\Migration\Migration;
-use Rocket\Migration\Rocket;
-
-class m00004_drop_old_column_from_products extends Migration
-{
-    public function up(): void
-    {
-        // Remove the column
-        Rocket::alter('products', function($column) {
-            $column->dropColumn('legacy_field');
-        });
-    }
-    
-    public function down(): void
-    {
-        // To restore the column, you need to know its definition
-        // This is a placeholder - update with the actual column definition
-        Rocket::alter('products', function($column) {
-            $column->string('legacy_field');
-        });
+        Rocket::drop('users');
     }
 }
 ```
@@ -556,200 +495,6 @@ Actions:
 - `restrictOnDelete()` - Prevent deletion if child records exist
 - `cascadeOnUpdate()` - Update foreign key when parent is updated
 
-### Why This Matters: CREATE vs ALTER
-
-Understanding the difference is crucial for database integrity:
-
-| Operation | Method | When to Use |
-|-----------|--------|-------------|
-| **CREATE** | `Rocket::table()` | Only when the table doesn't exist yet |
-| **ALTER** | `Rocket::alter()` | When the table already exists and has data |
-
-**Example Scenario:**
-
-```bash
-# 1. First migration: Create the table
-php juice make:migration create_products_table
-# → Uses Rocket::table()
-
-# 2. Later, need to add a column
-php juice make:migration add_sku_to_products
-# → Uses Rocket::alter() because table already exists
-
-# 3. Later, need to remove a column
-php juice make:migration drop_old_column_from_products
-# → Uses Rocket::alter() with dropColumn()
-```
-
-### The Intelligence Behind It
-
-The system doesn't just guess - it actively **analyzes your migration name**:
-
-```php
-// Inside the migration generator (simplified logic)
-if (strpos($migrationName, 'create_') === 0 && strpos($migrationName, '_table') !== false) {
-    // This is a table creation migration
-    return $this->createTableTemplate($className, $tableName);
-    
-} elseif (strpos($migrationName, 'add_') === 0 && strpos($migrationName, '_to_') !== false) {
-    // This adds columns to an existing table
-    return $this->addColumnTemplate($className, $tableName, $column);
-    
-} elseif (strpos($migrationName, 'drop_') === 0 && strpos($migrationName, '_from_') !== false) {
-    // This removes columns from an existing table
-    return $this->dropColumnTemplate($className, $tableName, $column);
-    
-} elseif (strpos($migrationName, 'alter_') === 0) {
-    // This is a general table alteration
-    return $this->alterTableTemplate($className);
-    
-} else {
-    // Generic fallback
-    return $this->genericTemplate($className);
-}
-```
-
-### Practical Example: Building a Products Table
-
-Let's walk through a complete example:
-
-```bash
-# Step 1: Create the products table
-php juice make:migration create_products_table
-```
-
-**Generated migration (CREATE):**
-```php
-Rocket::table('products', function($column) {
-    $column->id('id');
-    $column->string('name');
-    $column->timestamps();
-});
-```
-
-```bash
-# Step 2: Run the migration
-php juice db:migrate
-# ✅ Table created
-
-# Step 3: Add more columns later
-php juice make:migration add_price_to_products
-```
-
-**Generated migration (ALTER):**
-```php
-Rocket::alter('products', function($column) {
-    $column->decimal('price', 10, 2);
-});
-```
-
-```bash
-# Step 4: Run the new migration
-php juice db:migrate
-# ✅ Column added, existing data preserved
-
-# Step 5: Add another column with constraints
-php juice make:migration add_sku_to_products
-```
-
-**Generated migration (ALTER with constraints):**
-```php
-Rocket::alter('products', function($column) {
-    $column->string('sku')->unique()->index();
-});
-```
-
-```bash
-# Step 6: Run the migration
-php juice db:migrate
-# ✅ Column added with unique constraint and index
-```
-
-### Complete Migration Example
-
-Here's how a full migration history might look:
-
-```php
-// migrations/m00001_create_products_table.php (CREATE)
-Rocket::table('products', function($column) {
-    $column->id('id');
-    $column->string('name');
-    $column->timestamps();
-});
-
-// migrations/m00002_add_price_to_products.php (ALTER)
-Rocket::alter('products', function($column) {
-    $column->decimal('price', 10, 2);
-});
-
-// migrations/m00003_add_sku_to_products.php (ALTER)
-Rocket::alter('products', function($column) {
-    $column->string('sku')->unique()->index();
-});
-
-// migrations/m00004_add_description_to_products.php (ALTER)
-Rocket::alter('products', function($column) {
-    $column->text('description')->nullable();
-});
-
-// migrations/m00005_add_is_active_to_products.php (ALTER)
-Rocket::alter('products', function($column) {
-    $column->boolean('is_active')->default(true);
-});
-```
-
-### The Result
-
-After running all migrations, your `products` table will have all the columns you added over time:
-
-| Column | Type | Description |
-|--------|------|-------------|
-| id | INT | Added in m00001 (CREATE) |
-| name | VARCHAR | Added in m00001 (CREATE) |
-| price | DECIMAL | Added in m00002 (ALTER) |
-| sku | VARCHAR | Added in m00003 (ALTER) |
-| description | TEXT | Added in m00004 (ALTER) |
-| is_active | BOOLEAN | Added in m00005 (ALTER) |
-| created_at | TIMESTAMP | Added in m00001 (CREATE) |
-| updated_at | TIMESTAMP | Added in m00001 (CREATE) |
-
-**All existing data was preserved** because we used `ALTER` operations on an existing table instead of trying to recreate it!
-
-### Best Practices for Migration Naming
-
-1. **Create tables**: Use `create_{table}_table`
-   ```bash
-   php juice make:migration create_users_table
-   php juice make:migration create_orders_table
-   ```
-
-2. **Add columns**: Use `add_{column}_to_{table}`
-   ```bash
-   php juice make:migration add_email_to_users
-   php juice make:migration add_price_to_products
-   ```
-
-3. **Drop columns**: Use `drop_{column}_from_{table}`
-   ```bash
-   php juice make:migration drop_legacy_field_from_users
-   ```
-
-4. **Alter tables**: Use `alter_{table}`
-   ```bash
-   php juice make:migration alter_users_table
-   ```
-
-5. **Be descriptive**: The name should clearly indicate what the migration does
-   ```bash
-   # Good
-   php juice make:migration add_phone_number_to_users
-   php juice make:migration create_products_table
-   
-   # Avoid vague names
-   php juice make:migration update
-   php juice make:migration fix
-   ```
-
 ### Running Migrations
 
 ```bash
@@ -762,8 +507,9 @@ php juice migrate:rollback
 # Rollback all migrations
 php juice migrate:reset
 
-# Reset and re-run all migrations
+# Reset and re-run all migrations (with optional seed)
 php juice migrate:fresh
+php juice migrate:fresh --seed
 ```
 
 ## Seeding
@@ -825,26 +571,45 @@ class UserFactory extends Factory
 php juice make:seeder UserSeeder
 ```
 
-### Seeder Structure
+### Seeder Structure with Truncate
 
 ```php
 <?php
 namespace Seeds;
 
 use Rocket\Seed\Seeder;
+use App\Entities\User;
 
 class UserSeeder extends Seeder
 {
     public function run(): void
     {
+        echo "🌱 Seeding users...\n";
+        
+        // Clean the table before seeding (no raw SQL!)
+        User::truncate();
+        
+        // Create admin user
+        $admin = new User();
+        $admin->email = 'admin@example.com';
+        $admin->password = 'admin123';
+        $admin->firstname = 'Admin';
+        $admin->lastname = 'User';
+        $admin->save();
+        echo "  ✓ Created admin user\n";
+        
         // Create 10 regular users
-        UserFactory::new()->count(10)->create();
+        for ($i = 1; $i <= 10; $i++) {
+            $user = new User();
+            $user->email = "user{$i}@example.com";
+            $user->password = 'password123';
+            $user->firstname = "User";
+            $user->lastname = "{$i}";
+            $user->save();
+        }
+        echo "  ✓ Created 10 regular users\n";
         
-        // Create an admin user
-        UserFactory::new()->admin()->create();
-        
-        // Create 5 inactive users
-        UserFactory::new()->count(5)->inactive()->create();
+        echo "✅ User seeding completed!\n";
     }
 }
 ```
@@ -878,6 +643,9 @@ php juice seed
 
 # Run specific seeder
 php juice seed UserSeeder
+
+# Fresh migrate and seed
+php juice db:fresh --seed
 ```
 
 ## Validation
@@ -945,94 +713,6 @@ return Response::json($user->toArray());
 // Password and remember_token are excluded
 ```
 
-## Advanced Examples
-
-### Complete Product Entity with Relationships
-
-```php
-<?php
-namespace App\Entities;
-
-use Rocket\ORM\Entity;
-use Rocket\Attributes\Entity as EntityAttr;
-use Rocket\Attributes\Column;
-use Rocket\Attributes\Relations\HasMany;
-use Rocket\Attributes\Relations\BelongsTo;
-use Rocket\Attributes\Rules\Required;
-use Rocket\Attributes\Rules\Min;
-use Rocket\Attributes\Rules\Max;
-
-#[EntityAttr(table: 'products')]
-class Product extends Entity
-{
-    #[Column(primary: true, autoIncrement: true)]
-    public int $id = 0;
-    
-    #[Column]
-    #[Required]
-    #[Min(3)]
-    #[Max(255)]
-    public string $name = '';
-    
-    #[Column]
-    public string $description = '';
-    
-    #[Column]
-    #[Required]
-    #[Min(0)]
-    public float $price = 0.00;
-    
-    #[Column]
-    public int $stock = 0;
-    
-    #[Column]
-    public bool $is_active = true;
-    
-    #[Column]
-    public int $category_id = 0;
-    
-    #[Column(autoCreate: true)]
-    public string $created_at = '';
-    
-    #[Column(autoCreate: true, autoUpdate: true)]
-    public string $updated_at = '';
-    
-    #[BelongsTo(Category::class, 'category_id', 'id')]
-    protected $category;
-    
-    #[HasMany(OrderItem::class, 'product_id', 'id')]
-    protected $order_items;
-    
-    public function getDisplayName(): string
-    {
-        return $this->name;
-    }
-    
-    public function isInStock(): bool
-    {
-        return $this->stock > 0;
-    }
-    
-    public function getFormattedPrice(): string
-    {
-        return '$' . number_format($this->price, 2);
-    }
-    
-    protected function beforeSave(): void
-    {
-        // Ensure price is always positive
-        if ($this->price < 0) {
-            $this->price = 0;
-        }
-        
-        // Ensure stock is never negative
-        if ($this->stock < 0) {
-            $this->stock = 0;
-        }
-    }
-}
-```
-
 ## CLI Commands Reference
 
 ```bash
@@ -1042,7 +722,9 @@ php juice db:migrate               # Run migrations
 php juice db:rollback              # Rollback last batch
 php juice db:reset                 # Rollback all migrations
 php juice db:fresh                 # Drop all tables and re-migrate
-php juice seed                     # Run seeders
+php juice db:fresh --seed          # Fresh migrate and seed
+php juice seed                     # Run all seeders
+php juice seed UserSeeder          # Run specific seeder
 
 # Code Generation
 php juice make:entity Product      # Create entity
@@ -1078,13 +760,18 @@ php juice version                  # Show version
    public string $email = '';
    ```
 
-4. **Use lifecycle hooks** for side effects like password hashing
+4. **Use lifecycle hooks** for side effects like password hashing and timestamps
    ```php
    protected function beforeSave(): void
    {
        if (!empty($this->password) && !$this->isPasswordHashed()) {
            $this->password = password_hash($this->password, PASSWORD_DEFAULT);
        }
+       
+       if ($this->isNew && empty($this->created_at)) {
+           $this->created_at = date('Y-m-d H:i:s');
+       }
+       $this->updated_at = date('Y-m-d H:i:s');
    }
    ```
 
@@ -1096,19 +783,28 @@ php juice version                  # Show version
    }
    ```
 
-6. **Use factories and seeders** for consistent test data
+6. **Use helper methods** instead of raw SQL
+   ```php
+   // Instead of: $this->db->execute("TRUNCATE TABLE users");
+   User::truncate();
+   
+   // Instead of: $this->db->execute("DELETE FROM users");
+   User::deleteAll();
+   ```
+
+7. **Use factories and seeders** for consistent test data
    ```bash
    php juice make:factory UserFactory
    php juice seed
    ```
 
-7. **Keep migrations version-controlled** for team collaboration
+8. **Keep migrations version-controlled** for team collaboration
    ```bash
    git add migrations/
    git commit -m "Add users table migration"
    ```
 
-8. **Use query builder** for complex queries instead of raw SQL
+9. **Use query builder** for complex queries instead of raw SQL
    ```php
    $products = Product::query()
        ->where('price', '>', 100)
@@ -1118,21 +814,12 @@ php juice version                  # Show version
        ->all();
    ```
 
-9. **Use computed properties** for derived values
-   ```php
-   public function getTotalPrice(): float
-   {
-       return $this->quantity * $this->unit_price;
-   }
-   ```
-
-10. **Use timestamps** for auditing and tracking
+10. **Use computed properties** for derived values
     ```php
-    #[Column(autoCreate: true)]
-    public string $created_at = '';
-    
-    #[Column(autoCreate: true, autoUpdate: true)]
-    public string $updated_at = '';
+    public function getTotalPrice(): float
+    {
+        return $this->quantity * $this->unit_price;
+    }
     ```
 
 ## Troubleshooting
@@ -1166,4 +853,6 @@ php juice version                  # Show version
 ## Resources
 
 - [Luxid Framework Documentation](https://luxid.dev/docs)
+- [Rocket ORM GitHub Repository](https://github.com/LuxidDev/Luxid-Rocket)
+- [Issue Tracker](https://github.com/LuxidDev/Luxid-Rocket/issues)
 ```
