@@ -4,13 +4,6 @@ namespace Rocket\Attributes\Rules;
 
 use Attribute;
 
-/**
- * In Validation Rule
- * 
- * Validates that a value is in a given list of allowed values.
- * 
- * @package Rocket\Attributes\Rules
- */
 #[Attribute(Attribute::TARGET_PROPERTY)]
 class In
 {
@@ -25,7 +18,7 @@ class In
     }
   }
 
-  public function validate($value): bool
+  public function validate($value, $entity = null): bool
   {
     if (empty($value)) {
       return true; // Use Required to enforce presence
