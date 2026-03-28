@@ -184,6 +184,76 @@ abstract class Entity
   }
 
   /**
+   * Delete all records from the table
+   * 
+   * @return bool
+   */
+  public static function deleteAll(): bool
+  {
+    $tableName = static::tableName();
+    return self::connection()->execute("DELETE FROM {$tableName}") !== false;
+  }
+
+  /**
+   * Get the count of records in the table
+   * 
+   * @return int
+   */
+  public static function count(): int
+  {
+    return static::query()->count();
+  }
+
+  /**
+   * Check if any records exist in the table
+   * 
+   * @return bool
+   */
+  public static function exists(): bool
+  {
+    return static::count() > 0;
+  }
+
+  /**
+   * Get the first record in the table
+   * 
+   * @return static|null
+   */
+  public static function first(): ?static
+  {
+    return static::query()->orderBy(static::primaryKey(), 'ASC')->first();
+  }
+
+  /**
+   * Get the last record in the table
+   * 
+   * @return static|null
+   */
+  public static function last(): ?static
+  {
+    return static::query()->orderBy(static::primaryKey(), 'DESC')->first();
+  }
+
+  /**
+   * Get random records
+   * 
+   * @param int $limit
+   * @return array
+   */
+  public static function random(int $limit = 1): array
+  {
+    $query = static::query()->orderBy('RAND()');
+
+    if ($limit > 1) {
+      $query->limit($limit);
+      return $query->all();
+    }
+
+    $result = $query->first();
+    return $result ? [$result] : [];
+  }
+
+  /**
    * Perform insert operation
    */
   protected function performInsert(): bool
